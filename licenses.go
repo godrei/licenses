@@ -1,10 +1,9 @@
-package main
+package licences
 
 import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -13,9 +12,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
-	"github.com/pmezard/licenses/assets"
+	"github.com/bitrise-io/steps-xcode-test/pretty"
+
+	"github.com/godrei/licenses/assets"
 )
 
 type Template struct {
@@ -235,6 +235,12 @@ func listPackagesAndDeps(gopath string, pkgs []string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	own := map[string]bool{}
+	for _, pkg := range pkgs {
+		own[pkg] = true
+	}
+	fmt.Println(pretty.Object(own))
+
 	args := []string{"list", "-f", "{{range .Deps}}{{.}}|{{end}}"}
 	args = append(args, pkgs...)
 	cmd := exec.Command("go", args...)
@@ -251,17 +257,16 @@ func listPackagesAndDeps(gopath string, pkgs []string) ([]string, error) {
 	}
 	deps := []string{}
 	seen := map[string]bool{}
+	for _, pkg := range pkgs {
+		if !seen[pkg] {
+			seen[pkg] = true
+		}
+	}
 	for _, s := range strings.Split(string(out), "|") {
 		s = strings.TrimSpace(s)
 		if s != "" && !seen[s] {
 			deps = append(deps, s)
 			seen[s] = true
-		}
-	}
-	for _, pkg := range pkgs {
-		if !seen[pkg] {
-			seen[pkg] = true
-			deps = append(deps, pkg)
 		}
 	}
 	sort.Strings(deps)
@@ -533,44 +538,16 @@ func groupLicenses(licenses []License) ([]License, error) {
 	return kept, nil
 }
 
-func printLicenses() error {
-	flag.Usage = func() {
-		fmt.Println(`Usage: licenses IMPORTPATH...
-
-licenses lists all dependencies of specified packages or commands, excluding
-standard library packages, and prints their licenses. Licenses are detected by
-looking for files named like LICENSE, COPYING, COPYRIGHT and other variants in
-the package directory, and its parent directories until one is found. Files
-content is matched against a set of well-known licenses and the best match is
-displayed along with its score.
-
-With -a, all individual packages are displayed instead of grouping them by
-license files.
-With -w, words in package license file not found in the template license are
-displayed. It helps assessing the changes importance.
-`)
-		os.Exit(1)
-	}
-	all := flag.Bool("a", false, "display all individual packages")
-	words := flag.Bool("w", false, "display words not matching license template")
-	flag.Parse()
-	if flag.NArg() < 1 {
-		return fmt.Errorf("expect at least one package argument")
-	}
-	pkgs := flag.Args()
+func LicensesInCurrentDir() (map[string]string, error) {
+	pkgs := []string{"./..."}
 
 	confidence := 0.9
 	licenses, err := listLicenses("", pkgs)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if !*all {
-		licenses, err = groupLicenses(licenses)
-		if err != nil {
-			return err
-		}
-	}
-	w := tabwriter.NewWriter(os.Stdout, 1, 4, 2, ' ', 0)
+
+	licensesByPackage := map[string]string{}
 	for _, l := range licenses {
 		license := "?"
 		if l.Template != nil {
@@ -578,30 +555,13 @@ displayed. It helps assessing the changes importance.
 				license = fmt.Sprintf("%s", l.Template.Title)
 			} else if l.Score >= confidence {
 				license = fmt.Sprintf("%s (%2d%%)", l.Template.Title, int(100*l.Score))
-				if *words && len(l.ExtraWords) > 0 {
-					license += "\n\t+words: " + strings.Join(l.ExtraWords, ", ")
-				}
-				if *words && len(l.MissingWords) > 0 {
-					license += "\n\t-words: " + strings.Join(l.MissingWords, ", ")
-				}
 			} else {
 				license = fmt.Sprintf("? (%s, %2d%%)", l.Template.Title, int(100*l.Score))
 			}
 		} else if l.Err != "" {
 			license = strings.Replace(l.Err, "\n", " ", -1)
 		}
-		_, err = w.Write([]byte(l.Package + "\t" + license + "\n"))
-		if err != nil {
-			return err
-		}
+		licensesByPackage[l.Package] = license
 	}
-	return w.Flush()
-}
-
-func main() {
-	err := printLicenses()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %s\n", err)
-		os.Exit(1)
-	}
+	return licensesByPackage, nil
 }
