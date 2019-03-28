@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	licensesByPackage, err := licenses.Licenses("")
+	licensesByPackage, err := licenses.Licenses("", "")
 	if err != nil {
 		panic(err)
 	}

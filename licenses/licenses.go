@@ -203,10 +203,11 @@ func (err *MissingError) Error() string {
 // expandPackages takes a list of package or package expressions and invoke go
 // list to expand them to packages. In particular, it handles things like "..."
 // and ".".
-func expandPackages(dir string, pkgs []string) ([]string, error) {
+func expandPackages(gopath, dir string, pkgs []string) ([]string, error) {
 	args := []string{"list"}
 	args = append(args, pkgs...)
 	cmd := exec.Command("go", args...)
+	cmd.Env = fixEnv(gopath)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -228,8 +229,8 @@ func expandPackages(dir string, pkgs []string) ([]string, error) {
 	return names, nil
 }
 
-func listPackagesAndDeps(dir string, pkgs []string) ([]string, error) {
-	pkgs, err := expandPackages(dir, pkgs)
+func listPackagesAndDeps(gopath, dir string, pkgs []string) ([]string, error) {
+	pkgs, err := expandPackages(gopath, dir, pkgs)
 	if err != nil {
 		return nil, err
 	}
@@ -242,6 +243,7 @@ func listPackagesAndDeps(dir string, pkgs []string) ([]string, error) {
 	args = append(args, pkgs...)
 	cmd := exec.Command("go", args...)
 	cmd.Dir = dir
+	cmd.Env = fixEnv(gopath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		output := string(out)
@@ -270,8 +272,8 @@ func listPackagesAndDeps(dir string, pkgs []string) ([]string, error) {
 	return deps, nil
 }
 
-func listStandardPackages(dir string) ([]string, error) {
-	return expandPackages(dir, []string{"std", "cmd"})
+func listStandardPackages(gopath, dir string) ([]string, error) {
+	return expandPackages(gopath, dir, []string{"std", "cmd"})
 }
 
 type PkgError struct {
@@ -286,13 +288,14 @@ type PkgInfo struct {
 	Error      *PkgError
 }
 
-func getPackagesInfo(dir string, pkgs []string) ([]*PkgInfo, error) {
+func getPackagesInfo(gopath, dir string, pkgs []string) ([]*PkgInfo, error) {
 	args := []string{"list", "-e", "-json"}
 	// TODO: split the list for platforms which do not support massive argument
 	// lists.
 	args = append(args, pkgs...)
 	cmd := exec.Command("go", args...)
 	cmd.Dir = dir
+	cmd.Env = fixEnv(gopath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("go %s failed with:\n%s",
@@ -386,12 +389,12 @@ type License struct {
 	MissingWords []string
 }
 
-func listLicenses(dir string, pkgs []string) ([]License, error) {
+func listLicenses(gopath, dir string, pkgs []string) ([]License, error) {
 	templates, err := loadTemplates()
 	if err != nil {
 		return nil, err
 	}
-	deps, err := listPackagesAndDeps(dir, pkgs)
+	deps, err := listPackagesAndDeps(gopath, dir, pkgs)
 	if err != nil {
 		if _, ok := err.(*MissingError); ok {
 			return nil, err
@@ -399,7 +402,7 @@ func listLicenses(dir string, pkgs []string) ([]License, error) {
 		return nil, fmt.Errorf("could not list %s dependencies: %s",
 			strings.Join(pkgs, " "), err)
 	}
-	std, err := listStandardPackages(dir)
+	std, err := listStandardPackages(gopath, dir)
 	if err != nil {
 		return nil, fmt.Errorf("could not list standard packages: %s", err)
 	}
@@ -407,7 +410,7 @@ func listLicenses(dir string, pkgs []string) ([]License, error) {
 	for _, n := range std {
 		stdSet[n] = true
 	}
-	infos, err := getPackagesInfo(dir, deps)
+	infos, err := getPackagesInfo(gopath, dir, deps)
 	if err != nil {
 		return nil, err
 	}
@@ -535,11 +538,11 @@ func groupLicenses(licenses []License) ([]License, error) {
 	return kept, nil
 }
 
-func Licenses(dir string) (map[string]string, error) {
+func Licenses(gopath, dir string) (map[string]string, error) {
 	pkgs := []string{"./..."}
 
 	confidence := 0.9
-	licenses, err := listLicenses(dir, pkgs)
+	licenses, err := listLicenses(gopath, dir, pkgs)
 	if err != nil {
 		return nil, err
 	}
