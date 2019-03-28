@@ -13,8 +13,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bitrise-io/steps-xcode-test/pretty"
-
 	"github.com/godrei/licenses/assets"
 )
 
@@ -239,7 +237,6 @@ func listPackagesAndDeps(gopath string, pkgs []string) ([]string, error) {
 	for _, pkg := range pkgs {
 		own[pkg] = true
 	}
-	fmt.Println(pretty.Object(own))
 
 	args := []string{"list", "-f", "{{range .Deps}}{{.}}|{{end}}"}
 	args = append(args, pkgs...)
