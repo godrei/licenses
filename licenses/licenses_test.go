@@ -1,4 +1,4 @@
-package licences
+package licenses
 
 import (
 	"fmt"
